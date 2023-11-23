@@ -1,4 +1,4 @@
-name: raian-porfolio-backend
+name: raian-porfolio-frontend-depl
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: "raian-porfolio-backend"
+  IMAGE_NAME: "raian-porfolio-frontend"
 
 jobs:
   sonarqube:
@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      ##unit test
+      # - name: Unit test
+      #   run: cd autorizador && npm install && npm run test:ci
         with:
           fetch-depth: 0
       - uses: sonarsource/sonarqube-scan-action@master
@@ -34,8 +37,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.ACTIONS_TOKEN }}
       - name: actualizando version
         id: step
         shell: pwsh
@@ -60,18 +61,28 @@ jobs:
     steps:
       - name: Checkout 
         uses: actions/checkout@v3
-      - name: update package json
-        run: |
-          npm version --no-git-tag-version --allow-same-version ${{needs.update-version.outputs.output}}
+
       - name: Build Docker image
         run: |
           docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest .
           docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
       - name: Push Docker image
         run: |
-          docker tag ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{needs.update-version.outputs.output}}
           docker push ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          docker tag ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{needs.update-version.outputs.output}}
           docker push ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{needs.update-version.outputs.output}}
+
+      - name: Save Docker image
+        run: |
+          docker save --output image.tar "${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{needs.update-version.outputs.output}}"
+
+      - name: Upload Docker image
+        uses: actions/upload-artifact@v2
+        with:
+          name: docker-image
+          path: image.tar
+          retention-days: 0.1
 
   deploy-dev:
     name: deploy dev
@@ -94,16 +105,16 @@ jobs:
             -Version "$Env:VERSION" `
             -Email "$Env:GIT_EMAIL" `
             -User "$Env:GITHUB_ACTOR" `
-            -IaC_Repo_Path "OKE-dev-prod/apps/vimcash/overlays/dev/tools" `
+            -IaC_Repo_Path "OKE-dev-prod/apps/vimcash/overlays/dev" `
             -APP_Name "$Env:APP_NAME" `
-            -Docker_Username "$Env:DOCKER_USERNAME" `
+            -Argocd_Name "$Env:ARGOCD_USERNAME" `
+            -Argocd_Pass "$Env:ARGOCD_PASSWORD"
         env:
           VERSION: ${{needs.update-version.outputs.output}}
           GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
           APP_NAME: ${{ env.IMAGE_NAME }}
           ARGOCD_USERNAME: ${{ secrets.ARGOCD_USERNAME }}
           ARGOCD_PASSWORD: ${{ secrets.ARGOCD_PASSWORD }}
-          DOCKER_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
         continue-on-error: true
       - name: Check on failures Prod
         if: steps.gitvalue.outcome != 'success'
@@ -135,10 +146,22 @@ jobs:
         env:
           GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
 
+      - name: Download Docker image
+        uses: actions/download-artifact@v2
+        with:
+          name: docker-image
+      - name: Load Docker image
+        run: |
+          docker load --input image.tar
+          echo ${{ steps.step.outputs.version }}
+
+      # Log in to Docker Hub and push the image
       - name: Publish Docker image
         run: |
           docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
-          docker buildx imagetools create ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{needs.update-version.outputs.output}} --tag ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.step.outputs.version }}
+          docker tag ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{needs.update-version.outputs.output}} ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.step.outputs.version }}
+          docker push "${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.step.outputs.version }}"
+          docker image ls
 
       - name: Checkout to Aplicaciones VimCash
         uses: actions/checkout@master
@@ -152,7 +175,7 @@ jobs:
             -Version "$Env:VERSION" `
             -Email "$Env:GIT_EMAIL" `
             -User "$Env:GITHUB_ACTOR" `
-            -IaC_Repo_Path "OKE-dev-prod/apps/vimcash/overlays/prod/tools" `
+            -IaC_Repo_Path "OKE-dev-prod/apps/vimcash/overlays/prod" `
             -APP_Name "$Env:APP_NAME" `
             -Argocd_Name "$Env:ARGOCD_USERNAME" `
             -Argocd_Pass "$Env:ARGOCD_PASSWORD"
