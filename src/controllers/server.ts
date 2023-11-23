@@ -6,6 +6,7 @@ import morgan from "morgan"
 import * as env from '../environments'
 import { JobRoutes } from '../feats/porfolio';
 import { ProjectRoutes } from '../feats/porfolio/routes/project';
+import { AppRoutes } from '../feats/general/routes/app';
 
 export class Server {
   app: Express
@@ -29,6 +30,7 @@ export class Server {
   private loadRoutes = (app:Express) => {
     new JobRoutes(app)
     new ProjectRoutes(app)
+    new AppRoutes(app)
   }
   
   public async start() {
