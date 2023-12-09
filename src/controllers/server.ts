@@ -7,6 +7,7 @@ import * as env from '../environments'
 import { JobRoutes } from '../feats/porfolio';
 import { ProjectRoutes } from '../feats/porfolio/routes/project';
 import { AppRoutes } from '../feats/general/routes/app';
+import { FeedbackRoutes } from '../feats/porfolio/routes/feedback';
 
 export class Server {
   app: Express
@@ -31,6 +32,7 @@ export class Server {
     new JobRoutes(app)
     new ProjectRoutes(app)
     new AppRoutes(app)
+    new FeedbackRoutes(app)
   }
   
   public async start() {
